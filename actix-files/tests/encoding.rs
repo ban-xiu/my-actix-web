@@ -75,9 +75,11 @@ async fn test_multiple_directories() {
     std::fs::write("./tests/test2/fallback.txt", "File from test2").unwrap();
 
     // Test multiple directories with new_from_array
-    let srv = test::init_service(
-        App::new().service(Files::new_from_array("/", &["./tests/test1", "./tests/test2"]))
-    ).await;
+    let srv = test::init_service(App::new().service(Files::new_from_array(
+        "/",
+        &["./tests/test1", "./tests/test2"],
+    )))
+    .await;
 
     // Test file from first directory
     let req = TestRequest::with_uri("/test.txt").to_request();
@@ -113,9 +115,11 @@ async fn test_multiple_directories_iterator() {
     std::fs::write("./tests/test1/test.txt", "File from test1").unwrap();
 
     // Test multiple directories with new_multiple
-    let srv = test::init_service(
-        App::new().service(Files::new_multiple("/", vec!["./tests/test1", "./tests/test2"]))
-    ).await;
+    let srv = test::init_service(App::new().service(Files::new_multiple(
+        "/",
+        vec!["./tests/test1", "./tests/test2"],
+    )))
+    .await;
 
     // Test file from first directory
     let req = TestRequest::with_uri("/test.txt").to_request();

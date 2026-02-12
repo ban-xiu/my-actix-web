@@ -140,7 +140,7 @@ impl Service<ServiceRequest> for FilesService {
             // Try to find file in multiple directories
             let mut found_path = None;
             let mut last_err = None;
-            
+
             for directory in &this.directories {
                 let path = directory.join(&path_on_disk);
                 match path.canonicalize() {
@@ -159,7 +159,9 @@ impl Service<ServiceRequest> for FilesService {
                 Some(path) => path,
                 None => {
                     // If all directories failed, use the last error
-                    let err = last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"));
+                    let err = last_err.unwrap_or_else(|| {
+                        io::Error::new(io::ErrorKind::NotFound, "File not found")
+                    });
                     return this.handle_err(err, req).await;
                 }
             };
