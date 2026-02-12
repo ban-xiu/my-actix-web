@@ -37,7 +37,7 @@ use crate::{
 /// ```
 pub struct Files {
     mount_path: String,
-    directory: PathBuf,
+    directories: Vec<PathBuf>,
     index: Option<String>,
     show_index: bool,
     redirect_to_slash: bool,
@@ -62,7 +62,7 @@ impl fmt::Debug for Files {
 impl Clone for Files {
     fn clone(&self) -> Self {
         Self {
-            directory: self.directory.clone(),
+            directories: self.directories.clone(),
             index: self.index.clone(),
             show_index: self.show_index,
             redirect_to_slash: self.redirect_to_slash,
@@ -82,15 +82,16 @@ impl Clone for Files {
 }
 
 impl Files {
-    /// Create new `Files` instance for a specified base directory.
+    /// Create new `Files` instance for specified base directories.
     ///
     /// # Argument Order
     /// The first argument (`mount_path`) is the root URL at which the static files are served.
     /// For example, `/assets` will serve files at `example.com/assets/...`.
     ///
     /// The second argument (`serve_from`) is the location on disk at which files are loaded.
-    /// This can be a relative path. For example, `./` would serve files from the current
-    /// working directory.
+    /// This can be a single path or an iterator of paths.
+    /// - For a single path: `"./static"` would serve files from the current working directory.
+    /// - For multiple paths: `std::iter::once("./dist").chain(std::iter::once("./public"))` would serve files from both directories in order of priority.
     ///
     /// # Implementation Notes
     /// If the mount path is set as the root path `/`, services registered after this one will
@@ -100,18 +101,51 @@ impl Files {
     /// The number of running threads is adjusted over time as needed, up to a maximum of 512 times
     /// the number of server [workers](actix_web::HttpServer::workers), by default.
     pub fn new<T: Into<PathBuf>>(mount_path: &str, serve_from: T) -> Files {
-        let orig_dir = serve_from.into();
-        let dir = match orig_dir.canonicalize() {
-            Ok(canon_dir) => canon_dir,
-            Err(_) => {
-                log::error!("Specified path is not a directory: {:?}", orig_dir);
-                PathBuf::new()
-            }
-        };
+        Self::new_multiple(mount_path, std::iter::once(serve_from))
+    }
+
+    /// Create new `Files` instance for specified base directories from an array.
+    ///
+    /// # Argument Order
+    /// The first argument (`mount_path`) is the root URL at which the static files are served.
+    /// For example, `/assets` will serve files at `example.com/assets/...`.
+    ///
+    /// The second argument (`serve_from`) is an array of paths on disk at which files are loaded.
+    /// For example, `["./dist", "./public"]` would serve files from both directories in order of priority.
+    pub fn new_from_array<T: Into<PathBuf> + Clone>(mount_path: &str, serve_from: &[T]) -> Files {
+        Self::new_multiple(mount_path, serve_from.iter().cloned())
+    }
+
+    /// Create new `Files` instance for specified base directories from an iterator.
+    ///
+    /// # Argument Order
+    /// The first argument (`mount_path`) is the root URL at which the static files are served.
+    /// For example, `/assets` will serve files at `example.com/assets/...`.
+    ///
+    /// The second argument (`serve_from`) is an iterator of paths on disk at which files are loaded.
+    /// For example, `vec!["./dist", "./public"].into_iter()` would serve files from both directories in order of priority.
+    pub fn new_multiple<I, T>(mount_path: &str, serve_from: I) -> Files
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<PathBuf>,
+    {
+        let directories = serve_from
+            .into_iter()
+            .map(|path| {
+                let orig_dir = path.into();
+                match orig_dir.canonicalize() {
+                    Ok(canon_dir) => canon_dir,
+                    Err(_) => {
+                        log::error!("Specified path is not a directory: {:?}", orig_dir);
+                        PathBuf::new()
+                    }
+                }
+            })
+            .collect();
 
         Files {
             mount_path: mount_path.trim_end_matches('/').to_owned(),
-            directory: dir,
+            directories,
             index: None,
             show_index: false,
             redirect_to_slash: false,
@@ -387,7 +421,7 @@ impl ServiceFactory<ServiceRequest> for Files {
 
     fn new_service(&self, _: ()) -> Self::Future {
         let mut inner = FilesServiceInner {
-            directory: self.directory.clone(),
+            directories: self.directories.clone(),
             index: self.index.clone(),
             show_index: self.show_index,
             redirect_to_slash: self.redirect_to_slash,
